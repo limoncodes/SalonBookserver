@@ -1,11 +1,31 @@
 import express from "express"
 import 'dotenv/config'
+import cors from "cors"
+import { MongoClient } from "mongodb"
 const app = express()
+// middleware
+app.use(cors())
+app.use(express.json())
 const port = process.env.PORT || 5000
+const client = new MongoClient(`mongodb+srv://${process.env.MONGODB_USERNAME_URL}:${process.env.MONGODB_PASSWORD_URL}@cluster0.4dwew1j.mongodb.net/`);
+
+const database = client.db('SalonBook')
+const addServices = database.collection("addServices")
+
 
 app.get('/', (req, res) => {
   res.send('SalonBook')
-  
+
+})
+app.post('/Add-Services', async (req, res) => {
+  try {
+    const data = req.body
+    const result = await addServices.insertOne(data)
+    res.send(result)
+  } catch (error) {
+    console.error("Add service error:", error)
+    res.status(500).send({ message: "Failed to add service", error: error.message })
+  }
 })
 
 
