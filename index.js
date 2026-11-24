@@ -27,6 +27,29 @@ app.post('/Add-Services', async (req, res) => {
     res.status(500).send({ message: "Failed to add service", error: error.message })
   }
 })
+app.get("/addServices", async (req, res) => {
+  try {
+    const { search, category, sort } = req.query
+
+    const query = {}
+    if (search) {
+      query.serviceName = { $regex: String(search), $options: "i" }
+    }
+    if (category && category !== "All") {
+      query.serviceCategory = String(category)
+    }
+
+    let sortOption = {}
+    if (sort === "price-low") sortOption = { price: 1 }
+    if (sort === "price-high") sortOption = { price: -1 }
+
+    const data = await addServices.find(query).sort(sortOption).toArray()
+    res.send(data)
+  } catch (error) {
+    console.error("Get services error:", error)
+    res.status(500).send({ message: "Failed to get services", error: error.message })
+  }
+})
 
 
 app.listen(port, () => {
