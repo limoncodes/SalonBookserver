@@ -372,35 +372,6 @@ app.patch("/appointments/:id/complete", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/mark-paid", async (req, res) => {
-  try {
-    const { id } = req.params
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).send({ message: "Invalid appointment id" })
-    }
-
-    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
-    if (!appointment) {
-      return res.status(404).send({ message: "Appointment not found" })
-    }
-    if (appointment.appointmentStatus === "Cancelled") {
-      return res.status(400).send({ message: "Cancelled appointments cannot be marked as paid" })
-    }
-    if (appointment.paymentStatus === "Paid") {
-      return res.status(400).send({ message: "Appointment is already paid" })
-    }
-
-    const result = await appointments.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { paymentStatus: "Paid" } },
-    )
-    res.send(result)
-  } catch (error) {
-    console.error("Mark paid error:", error)
-    res.status(500).send({ message: "Failed to mark appointment as paid", error: error.message })
-  }
-})
-
 app.post("/create-checkout-session", async (req, res) => {
   try {
     if (!stripe) {
@@ -500,7 +471,14 @@ app.post("/payments/verify", async (req, res) => {
     if (appointment.paymentStatus !== "Paid") {
       await appointments.updateOne(
         { _id: new ObjectId(appointmentId) },
-        { $set: { paymentStatus: "Paid", stripeSessionId: String(sessionId) } },
+        {
+          $set: {
+            paymentStatus: "Paid",
+            stripeSessionId: String(sessionId),
+            paidAt: new Date().toISOString(),
+            currency: "USD",
+          },
+        },
       )
     }
 
