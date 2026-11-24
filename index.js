@@ -2,11 +2,14 @@ import express from "express"
 import 'dotenv/config'
 import cors from "cors"
 import { MongoClient, ObjectId } from "mongodb"
+import Stripe from "stripe"
 const app = express()
 // middleware
 app.use(cors())
 app.use(express.json())
 const port = process.env.PORT || 5000
+const clientBaseUrl = process.env.CLIENT_BASE_URL || "http://localhost:3000"
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null
 const client = new MongoClient(`mongodb+srv://${process.env.MONGODB_USERNAME_URL}:${process.env.MONGODB_PASSWORD_URL}@cluster0.4dwew1j.mongodb.net/`);
 
 const database = client.db('SalonBook')
@@ -395,6 +398,116 @@ app.patch("/appointments/:id/mark-paid", async (req, res) => {
   } catch (error) {
     console.error("Mark paid error:", error)
     res.status(500).send({ message: "Failed to mark appointment as paid", error: error.message })
+  }
+})
+
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).send({ message: "Stripe is not configured on the server" })
+    }
+
+    const { appointmentId, userEmail } = req.body || {}
+    if (!ObjectId.isValid(appointmentId)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+    if (!userEmail) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(appointmentId) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+      return res.status(403).send({ message: "You can only pay for your own appointment" })
+    }
+    if (appointment.appointmentStatus !== "Confirmed") {
+      return res.status(400).send({ message: "Only confirmed appointments can be paid" })
+    }
+    if (appointment.paymentStatus === "Paid") {
+      return res.status(400).send({ message: "Appointment is already paid" })
+    }
+
+    const amount = Math.round(Number(appointment.price) * 100)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).send({ message: "Invalid appointment amount" })
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: appointment.serviceName || "Salon Service",
+              description: `Appointment on ${appointment.appointmentDate} at ${appointment.timeSlot}`,
+            },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      customer_email: appointment.userEmail,
+      metadata: {
+        appointmentId: String(appointment._id),
+        userEmail: String(appointment.userEmail),
+      },
+      success_url: `${clientBaseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&appointmentId=${appointment._id}`,
+      cancel_url: `${clientBaseUrl}/payment/cancel?appointmentId=${appointment._id}`,
+    })
+
+    res.send({ url: session.url })
+  } catch (error) {
+    console.error("Create checkout session error:", error)
+    res.status(500).send({ message: "Failed to create payment session", error: error.message })
+  }
+})
+
+app.post("/payments/verify", async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).send({ message: "Stripe is not configured on the server" })
+    }
+
+    const { sessionId, appointmentId, userEmail } = req.body || {}
+    if (!sessionId || !ObjectId.isValid(appointmentId)) {
+      return res.status(400).send({ message: "Invalid payment verification data" })
+    }
+    if (!userEmail) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(appointmentId) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+      return res.status(403).send({ message: "Forbidden" })
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    const paid = session.payment_status === "paid"
+    const metadataMatches =
+      session.metadata?.appointmentId === String(appointmentId) &&
+      String(session.metadata?.userEmail || "").toLowerCase() === String(userEmail).toLowerCase()
+
+    if (!paid || !metadataMatches) {
+      return res.status(400).send({ message: "Payment not verified", paid, metadataMatches })
+    }
+
+    if (appointment.paymentStatus !== "Paid") {
+      await appointments.updateOne(
+        { _id: new ObjectId(appointmentId) },
+        { $set: { paymentStatus: "Paid", stripeSessionId: String(sessionId) } },
+      )
+    }
+
+    res.send({ success: true, paymentStatus: "Paid" })
+  } catch (error) {
+    console.error("Verify payment error:", error)
+    res.status(500).send({ message: "Failed to verify payment", error: error.message })
   }
 })
 
