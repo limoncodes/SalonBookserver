@@ -164,6 +164,7 @@ app.post("/appointments", async (req, res) => {
       serviceId: String(serviceId),
       serviceName: String(serviceName || service.serviceName || ""),
       serviceCategory: String(serviceCategory || service.serviceCategory || ""),
+      serviceImage: String(req.body?.serviceImage || service.serviceImage || ""),
       price: Number(price ?? service.price ?? 0),
       duration: Number(duration ?? service.duration ?? 0),
       appointmentDate: String(appointmentDate),
@@ -195,6 +196,128 @@ app.get("/appointments", async (req, res) => {
   } catch (error) {
     console.error("Get appointments error:", error)
     res.status(500).send({ message: "Failed to get appointments", error: error.message })
+  }
+})
+
+app.get("/appointments/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { email } = req.query
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (email && String(appointment.userEmail).toLowerCase() !== String(email).toLowerCase()) {
+      return res.status(403).send({ message: "Forbidden" })
+    }
+
+    res.send(appointment)
+  } catch (error) {
+    console.error("Get appointment error:", error)
+    res.status(500).send({ message: "Failed to get appointment", error: error.message })
+  }
+})
+
+app.patch("/appointments/:id/cancel", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userEmail } = req.body || {}
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+    if (!userEmail) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+      return res.status(403).send({ message: "You can only cancel your own appointment" })
+    }
+    if (appointment.appointmentStatus !== "Pending") {
+      return res.status(400).send({ message: "Only pending appointments can be cancelled" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { appointmentStatus: "Cancelled" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Cancel appointment error:", error)
+    res.status(500).send({ message: "Failed to cancel appointment", error: error.message })
+  }
+})
+
+app.patch("/appointments/:id/pay", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userEmail } = req.body || {}
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+    if (!userEmail) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+      return res.status(403).send({ message: "You can only pay for your own appointment" })
+    }
+    if (appointment.appointmentStatus !== "Confirmed") {
+      return res.status(400).send({ message: "Only confirmed appointments can be paid" })
+    }
+    if (appointment.paymentStatus === "Paid") {
+      return res.status(400).send({ message: "Appointment is already paid" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { paymentStatus: "Paid" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Pay appointment error:", error)
+    res.status(500).send({ message: "Failed to pay for appointment", error: error.message })
+  }
+})
+
+app.delete("/appointments/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    const { email } = req.query
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+    if (!email) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (String(appointment.userEmail).toLowerCase() !== String(email).toLowerCase()) {
+      return res.status(403).send({ message: "You can only delete your own appointment" })
+    }
+    if (appointment.appointmentStatus !== "Cancelled") {
+      return res.status(400).send({ message: "Only cancelled appointments can be deleted" })
+    }
+
+    const result = await appointments.deleteOne({ _id: new ObjectId(id) })
+    res.send(result)
+  } catch (error) {
+    console.error("Delete appointment error:", error)
+    res.status(500).send({ message: "Failed to delete appointment", error: error.message })
   }
 })
 
