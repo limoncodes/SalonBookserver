@@ -11,6 +11,7 @@ const client = new MongoClient(`mongodb+srv://${process.env.MONGODB_USERNAME_URL
 
 const database = client.db('SalonBook')
 const addServices = database.collection("addServices")
+const appointments = database.collection("appointments")
 
 
 app.get('/', (req, res) => {
@@ -113,6 +114,87 @@ app.delete("/addServices/:id", async (req, res) => {
   } catch (error) {
     console.error("Delete service error:", error)
     res.status(500).send({ message: "Failed to delete service", error: error.message })
+  }
+})
+
+app.post("/appointments", async (req, res) => {
+  try {
+    const {
+      serviceId,
+      serviceName,
+      serviceCategory,
+      price,
+      duration,
+      appointmentDate,
+      timeSlot,
+      message,
+      userEmail,
+      userName,
+    } = req.body || {}
+
+    if (!userEmail) {
+      return res.status(401).send({ message: "Authentication required" })
+    }
+    if (!serviceId || !ObjectId.isValid(serviceId)) {
+      return res.status(400).send({ message: "Valid service is required" })
+    }
+    if (!appointmentDate || !timeSlot) {
+      return res.status(400).send({ message: "Appointment date and time slot are required" })
+    }
+
+    const service = await addServices.findOne({ _id: new ObjectId(serviceId) })
+    if (!service) {
+      return res.status(404).send({ message: "Service not found" })
+    }
+    if (service.serviceStatus !== "Active") {
+      return res.status(400).send({ message: "Cannot book an inactive service" })
+    }
+
+    const duplicate = await appointments.findOne({
+      serviceId: String(serviceId),
+      appointmentDate: String(appointmentDate),
+      timeSlot: String(timeSlot),
+      appointmentStatus: { $in: ["Pending", "Confirmed"] },
+    })
+    if (duplicate) {
+      return res.status(409).send({ message: "This time slot is already booked for the selected date" })
+    }
+
+    const appointment = {
+      serviceId: String(serviceId),
+      serviceName: String(serviceName || service.serviceName || ""),
+      serviceCategory: String(serviceCategory || service.serviceCategory || ""),
+      price: Number(price ?? service.price ?? 0),
+      duration: Number(duration ?? service.duration ?? 0),
+      appointmentDate: String(appointmentDate),
+      timeSlot: String(timeSlot),
+      message: String(message || "").trim(),
+      userEmail: String(userEmail).toLowerCase(),
+      userName: String(userName || "").trim(),
+      appointmentStatus: "Pending",
+      paymentStatus: "Unpaid",
+      createdAt: new Date(),
+    }
+
+    const result = await appointments.insertOne(appointment)
+    res.send(result)
+  } catch (error) {
+    console.error("Create appointment error:", error)
+    res.status(500).send({ message: "Failed to book appointment", error: error.message })
+  }
+})
+
+app.get("/appointments", async (req, res) => {
+  try {
+    const { email } = req.query
+    const query = {}
+    if (email) query.userEmail = String(email).toLowerCase()
+
+    const data = await appointments.find(query).sort({ createdAt: -1 }).toArray()
+    res.send(data)
+  } catch (error) {
+    console.error("Get appointments error:", error)
+    res.status(500).send({ message: "Failed to get appointments", error: error.message })
   }
 })
 
