@@ -29,7 +29,7 @@ app.post('/Add-Services', async (req, res) => {
 })
 app.get("/addServices", async (req, res) => {
   try {
-    const { search, category, sort } = req.query
+    const { search, category, sort, status } = req.query
 
     const query = {}
     if (search) {
@@ -37,6 +37,9 @@ app.get("/addServices", async (req, res) => {
     }
     if (category && category !== "All") {
       query.serviceCategory = String(category)
+    }
+    if (status && status !== "All") {
+      query.serviceStatus = String(status)
     }
 
     let sortOption = {}
@@ -67,6 +70,49 @@ app.get("/addServices/:id", async (req, res) => {
   } catch (error) {
     console.error("Get service error:", error)
     res.status(500).send({ message: "Failed to get service", error: error.message })
+  }
+})
+
+app.patch("/addServices/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid service id" })
+    }
+
+    const { _id, ...updates } = req.body || {}
+    const result = await addServices.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updates },
+    )
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "Service not found" })
+    }
+
+    res.send(result)
+  } catch (error) {
+    console.error("Update service error:", error)
+    res.status(500).send({ message: "Failed to update service", error: error.message })
+  }
+})
+
+app.delete("/addServices/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid service id" })
+    }
+
+    const result = await addServices.deleteOne({ _id: new ObjectId(id) })
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Service not found" })
+    }
+
+    res.send(result)
+  } catch (error) {
+    console.error("Delete service error:", error)
+    res.status(500).send({ message: "Failed to delete service", error: error.message })
   }
 })
 
