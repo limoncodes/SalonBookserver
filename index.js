@@ -291,6 +291,113 @@ app.patch("/appointments/:id/pay", async (req, res) => {
   }
 })
 
+app.patch("/appointments/:id/confirm", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (appointment.appointmentStatus !== "Pending") {
+      return res.status(400).send({ message: "Only pending appointments can be confirmed" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { appointmentStatus: "Confirmed" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Confirm appointment error:", error)
+    res.status(500).send({ message: "Failed to confirm appointment", error: error.message })
+  }
+})
+
+app.patch("/appointments/:id/admin-cancel", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (!["Pending", "Confirmed"].includes(appointment.appointmentStatus)) {
+      return res.status(400).send({ message: "Only pending or confirmed appointments can be cancelled" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { appointmentStatus: "Cancelled" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Admin cancel appointment error:", error)
+    res.status(500).send({ message: "Failed to cancel appointment", error: error.message })
+  }
+})
+
+app.patch("/appointments/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (appointment.appointmentStatus !== "Confirmed") {
+      return res.status(400).send({ message: "Only confirmed appointments can be completed" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { appointmentStatus: "Completed" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Complete appointment error:", error)
+    res.status(500).send({ message: "Failed to complete appointment", error: error.message })
+  }
+})
+
+app.patch("/appointments/:id/mark-paid", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid appointment id" })
+    }
+
+    const appointment = await appointments.findOne({ _id: new ObjectId(id) })
+    if (!appointment) {
+      return res.status(404).send({ message: "Appointment not found" })
+    }
+    if (appointment.appointmentStatus === "Cancelled") {
+      return res.status(400).send({ message: "Cancelled appointments cannot be marked as paid" })
+    }
+    if (appointment.paymentStatus === "Paid") {
+      return res.status(400).send({ message: "Appointment is already paid" })
+    }
+
+    const result = await appointments.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { paymentStatus: "Paid" } },
+    )
+    res.send(result)
+  } catch (error) {
+    console.error("Mark paid error:", error)
+    res.status(500).send({ message: "Failed to mark appointment as paid", error: error.message })
+  }
+})
+
 app.delete("/appointments/:id", async (req, res) => {
   try {
     const { id } = req.params
