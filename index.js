@@ -1,7 +1,7 @@
 import express from "express"
 import 'dotenv/config'
 import cors from "cors"
-import { MongoClient } from "mongodb"
+import { MongoClient, ObjectId } from "mongodb"
 const app = express()
 // middleware
 app.use(cors())
@@ -48,6 +48,25 @@ app.get("/addServices", async (req, res) => {
   } catch (error) {
     console.error("Get services error:", error)
     res.status(500).send({ message: "Failed to get services", error: error.message })
+  }
+})
+
+app.get("/addServices/:id", async (req, res) => {
+  try {
+    const { id } = req.params
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid service id" })
+    }
+
+    const service = await addServices.findOne({ _id: new ObjectId(id) })
+    if (!service) {
+      return res.status(404).send({ message: "Service not found" })
+    }
+
+    res.send(service)
+  } catch (error) {
+    console.error("Get service error:", error)
+    res.status(500).send({ message: "Failed to get service", error: error.message })
   }
 })
 
