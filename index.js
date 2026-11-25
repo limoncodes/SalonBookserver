@@ -48,8 +48,12 @@ app.post("/jwt", async (req, res) => {
       return res.status(500).send({ message: "JWT is not configured on the server" })
     }
 
+    const normalizedEmail = String(email).toLowerCase()
+    const user = await database.collection("user").findOne({ email: normalizedEmail })
+    const role = user?.role || "user"
+
     const token = jwt.sign(
-      { email: String(email).toLowerCase() },
+      { email: normalizedEmail, role },
       jwtSecret,
       { expiresIn: "7d" },
     )
@@ -66,7 +70,7 @@ app.get('/', (req, res) => {
   res.send('SalonBook')
 
 })
-app.post('/Add-Services', async (req, res) => {
+app.post('/Add-Services', verifyJWT, async (req, res) => {
   try {
     const data = req.body
     const result = await addServices.insertOne(data)
@@ -122,7 +126,7 @@ app.get("/addServices/:id", async (req, res) => {
   }
 })
 
-app.patch("/addServices/:id", async (req, res) => {
+app.patch("/addServices/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -146,7 +150,7 @@ app.patch("/addServices/:id", async (req, res) => {
   }
 })
 
-app.delete("/addServices/:id", async (req, res) => {
+app.delete("/addServices/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -165,7 +169,7 @@ app.delete("/addServices/:id", async (req, res) => {
   }
 })
 
-app.post("/appointments", async (req, res) => {
+app.post("/appointments", verifyJWT, async (req, res) => {
   try {
     const {
       serviceId,
@@ -233,7 +237,7 @@ app.post("/appointments", async (req, res) => {
   }
 })
 
-app.get("/appointments", async (req, res) => {
+app.get("/appointments", verifyJWT, async (req, res) => {
   try {
     const { email } = req.query
     const query = {}
@@ -247,7 +251,7 @@ app.get("/appointments", async (req, res) => {
   }
 })
 
-app.get("/appointments/:id", async (req, res) => {
+app.get("/appointments/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     const { email } = req.query
@@ -270,7 +274,7 @@ app.get("/appointments/:id", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/cancel", async (req, res) => {
+app.patch("/appointments/:id/cancel", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     const { userEmail } = req.body || {}
@@ -303,7 +307,7 @@ app.patch("/appointments/:id/cancel", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/pay", async (req, res) => {
+app.patch("/appointments/:id/pay", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     const { userEmail } = req.body || {}
@@ -339,7 +343,7 @@ app.patch("/appointments/:id/pay", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/confirm", async (req, res) => {
+app.patch("/appointments/:id/confirm", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -365,7 +369,7 @@ app.patch("/appointments/:id/confirm", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/admin-cancel", async (req, res) => {
+app.patch("/appointments/:id/admin-cancel", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -391,7 +395,7 @@ app.patch("/appointments/:id/admin-cancel", async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/complete", async (req, res) => {
+app.patch("/appointments/:id/complete", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -417,7 +421,7 @@ app.patch("/appointments/:id/complete", async (req, res) => {
   }
 })
 
-app.post("/create-checkout-session", async (req, res) => {
+app.post("/create-checkout-session", verifyJWT, async (req, res) => {
   try {
     if (!stripe) {
       return res.status(500).send({ message: "Stripe is not configured on the server" })
@@ -481,7 +485,7 @@ app.post("/create-checkout-session", async (req, res) => {
   }
 })
 
-app.post("/payments/verify", async (req, res) => {
+app.post("/payments/verify", verifyJWT, async (req, res) => {
   try {
     if (!stripe) {
       return res.status(500).send({ message: "Stripe is not configured on the server" })
@@ -534,7 +538,7 @@ app.post("/payments/verify", async (req, res) => {
   }
 })
 
-app.delete("/appointments/:id", async (req, res) => {
+app.delete("/appointments/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     const { email } = req.query
