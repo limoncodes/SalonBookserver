@@ -515,6 +515,15 @@ app.post("/create-checkout-session", verifyJWT, async (req, res) => {
       return res.status(400).send({ message: "Invalid appointment amount" })
     }
 
+    // Prefer configured env URLs; otherwise fall back to the request origin so
+    // the redirect always lands on the domain the user is actually visiting.
+    const requestOrigin = req.headers.origin?.replace(/\/$/, "")
+    const redirectBase =
+      process.env.CLIENT_BASE_URL?.replace(/\/$/, "") ||
+      process.env.BETTER_AUTH_URL?.replace(/\/$/, "") ||
+      requestOrigin ||
+      clientBaseUrl
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: [
@@ -535,8 +544,8 @@ app.post("/create-checkout-session", verifyJWT, async (req, res) => {
         appointmentId: String(appointment._id),
         userEmail: String(appointment.userEmail),
       },
-      success_url: `${clientBaseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&appointmentId=${appointment._id}`,
-      cancel_url: `${clientBaseUrl}/payment/cancel?appointmentId=${appointment._id}`,
+      success_url: `${redirectBase}/payment/success?session_id={CHECKOUT_SESSION_ID}&appointmentId=${appointment._id}`,
+      cancel_url: `${redirectBase}/payment/cancel?appointmentId=${appointment._id}`,
     })
 
     res.send({ url: session.url })
