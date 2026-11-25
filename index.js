@@ -34,15 +34,15 @@ const verifyJWT = async (req, res, next) => {
     const email = String(decoded?.email || "").toLowerCase()
     const user = await database.collection("user").findOne({ email })
 
-    if (!user) {
-      return res.status(401).send({ message: "Unauthorized: user not found" })
-    }
-    if (user.banned) {
+    if (user?.banned) {
       return res.status(403).send({ message: "Forbidden: your account is banned" })
     }
 
-    req.decoded = { email, role: user.role || decoded.role || "user" }
-    req.authUser = user
+    req.decoded = {
+      email,
+      role: user?.role || (user ? "user" : "guest"),
+    }
+    req.authUser = user || null
     next()
   } catch (error) {
     return res.status(401).send({ message: "Unauthorized: invalid token" })
