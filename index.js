@@ -404,6 +404,9 @@ app.patch("/appointments/:id/admin-cancel", verifyJWT, verifyAdmin, async (req, 
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
+    if (appointment.paymentStatus === "Paid") {
+      return res.status(400).send({ message: "Paid appointments cannot be cancelled" })
+    }
     if (!["Pending", "Confirmed"].includes(appointment.appointmentStatus)) {
       return res.status(400).send({ message: "Only pending or confirmed appointments can be cancelled" })
     }
