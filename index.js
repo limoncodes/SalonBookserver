@@ -18,7 +18,7 @@ const database = client.db('SalonBook')
 const addServices = database.collection("addServices")
 const appointments = database.collection("appointments")
 
-const verifyJWT = (req, res, next) => {
+const verifyJWT = async (req, res, next) => {
   const authHeader = req.headers.authorization
   if (!authHeader?.startsWith("Bearer ")) {
     return res.status(401).send({ message: "Unauthorized: missing token" })
@@ -31,11 +31,29 @@ const verifyJWT = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, jwtSecret)
-    req.decoded = decoded
+    const email = String(decoded?.email || "").toLowerCase()
+    const user = await database.collection("user").findOne({ email })
+
+    if (!user) {
+      return res.status(401).send({ message: "Unauthorized: user not found" })
+    }
+    if (user.banned) {
+      return res.status(403).send({ message: "Forbidden: your account is banned" })
+    }
+
+    req.decoded = { email, role: user.role || decoded.role || "user" }
+    req.authUser = user
     next()
   } catch (error) {
     return res.status(401).send({ message: "Unauthorized: invalid token" })
   }
+}
+
+const verifyAdmin = (req, res, next) => {
+  if (req.decoded?.role !== "admin") {
+    return res.status(403).send({ message: "Forbidden: admin access required" })
+  }
+  next()
 }
 
 app.post("/jwt", async (req, res) => {
@@ -50,6 +68,9 @@ app.post("/jwt", async (req, res) => {
 
     const normalizedEmail = String(email).toLowerCase()
     const user = await database.collection("user").findOne({ email: normalizedEmail })
+    if (user?.banned) {
+      return res.status(403).send({ message: "Forbidden: your account is banned" })
+    }
     const role = user?.role || "user"
 
     const token = jwt.sign(
@@ -70,7 +91,7 @@ app.get('/', (req, res) => {
   res.send('SalonBook')
 
 })
-app.post('/Add-Services', verifyJWT, async (req, res) => {
+app.post('/Add-Services', verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const data = req.body
     const result = await addServices.insertOne(data)
@@ -126,7 +147,7 @@ app.get("/addServices/:id", verifyJWT, async (req, res) => {
   }
 })
 
-app.patch("/addServices/:id", verifyJWT, async (req, res) => {
+app.patch("/addServices/:id", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -150,7 +171,7 @@ app.patch("/addServices/:id", verifyJWT, async (req, res) => {
   }
 })
 
-app.delete("/addServices/:id", verifyJWT, async (req, res) => {
+app.delete("/addServices/:id", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -180,9 +201,9 @@ app.post("/appointments", verifyJWT, async (req, res) => {
       appointmentDate,
       timeSlot,
       message,
-      userEmail,
       userName,
     } = req.body || {}
+    const userEmail = String(req.decoded?.email || "").toLowerCase()
 
     if (!userEmail) {
       return res.status(401).send({ message: "Authentication required" })
@@ -239,9 +260,16 @@ app.post("/appointments", verifyJWT, async (req, res) => {
 
 app.get("/appointments", verifyJWT, async (req, res) => {
   try {
+    const isAdmin = req.decoded?.role === "admin"
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     const { email } = req.query
     const query = {}
-    if (email) query.userEmail = String(email).toLowerCase()
+
+    if (isAdmin) {
+      if (email) query.userEmail = String(email).toLowerCase()
+    } else {
+      query.userEmail = tokenEmail
+    }
 
     const data = await appointments.find(query).sort({ createdAt: -1 }).toArray()
     res.send(data)
@@ -254,7 +282,6 @@ app.get("/appointments", verifyJWT, async (req, res) => {
 app.get("/appointments/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
-    const { email } = req.query
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({ message: "Invalid appointment id" })
     }
@@ -263,7 +290,10 @@ app.get("/appointments/:id", verifyJWT, async (req, res) => {
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (email && String(appointment.userEmail).toLowerCase() !== String(email).toLowerCase()) {
+
+    const isAdmin = req.decoded?.role === "admin"
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
+    if (!isAdmin && String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "Forbidden" })
     }
 
@@ -277,19 +307,16 @@ app.get("/appointments/:id", verifyJWT, async (req, res) => {
 app.patch("/appointments/:id/cancel", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
-    const { userEmail } = req.body || {}
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({ message: "Invalid appointment id" })
-    }
-    if (!userEmail) {
-      return res.status(401).send({ message: "Authentication required" })
     }
 
     const appointment = await appointments.findOne({ _id: new ObjectId(id) })
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+    if (String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "You can only cancel your own appointment" })
     }
     if (appointment.appointmentStatus !== "Pending") {
@@ -310,19 +337,16 @@ app.patch("/appointments/:id/cancel", verifyJWT, async (req, res) => {
 app.patch("/appointments/:id/pay", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
-    const { userEmail } = req.body || {}
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({ message: "Invalid appointment id" })
-    }
-    if (!userEmail) {
-      return res.status(401).send({ message: "Authentication required" })
     }
 
     const appointment = await appointments.findOne({ _id: new ObjectId(id) })
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+    if (String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "You can only pay for your own appointment" })
     }
     if (appointment.appointmentStatus !== "Confirmed") {
@@ -343,7 +367,7 @@ app.patch("/appointments/:id/pay", verifyJWT, async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/confirm", verifyJWT, async (req, res) => {
+app.patch("/appointments/:id/confirm", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -369,7 +393,7 @@ app.patch("/appointments/:id/confirm", verifyJWT, async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/admin-cancel", verifyJWT, async (req, res) => {
+app.patch("/appointments/:id/admin-cancel", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -395,7 +419,7 @@ app.patch("/appointments/:id/admin-cancel", verifyJWT, async (req, res) => {
   }
 })
 
-app.patch("/appointments/:id/complete", verifyJWT, async (req, res) => {
+app.patch("/appointments/:id/complete", verifyJWT, verifyAdmin, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
@@ -427,19 +451,17 @@ app.post("/create-checkout-session", verifyJWT, async (req, res) => {
       return res.status(500).send({ message: "Stripe is not configured on the server" })
     }
 
-    const { appointmentId, userEmail } = req.body || {}
+    const { appointmentId } = req.body || {}
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     if (!ObjectId.isValid(appointmentId)) {
       return res.status(400).send({ message: "Invalid appointment id" })
-    }
-    if (!userEmail) {
-      return res.status(401).send({ message: "Authentication required" })
     }
 
     const appointment = await appointments.findOne({ _id: new ObjectId(appointmentId) })
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+    if (String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "You can only pay for your own appointment" })
     }
     if (appointment.appointmentStatus !== "Confirmed") {
@@ -491,19 +513,17 @@ app.post("/payments/verify", verifyJWT, async (req, res) => {
       return res.status(500).send({ message: "Stripe is not configured on the server" })
     }
 
-    const { sessionId, appointmentId, userEmail } = req.body || {}
+    const { sessionId, appointmentId } = req.body || {}
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     if (!sessionId || !ObjectId.isValid(appointmentId)) {
       return res.status(400).send({ message: "Invalid payment verification data" })
-    }
-    if (!userEmail) {
-      return res.status(401).send({ message: "Authentication required" })
     }
 
     const appointment = await appointments.findOne({ _id: new ObjectId(appointmentId) })
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (String(appointment.userEmail).toLowerCase() !== String(userEmail).toLowerCase()) {
+    if (String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "Forbidden" })
     }
 
@@ -511,7 +531,7 @@ app.post("/payments/verify", verifyJWT, async (req, res) => {
     const paid = session.payment_status === "paid"
     const metadataMatches =
       session.metadata?.appointmentId === String(appointmentId) &&
-      String(session.metadata?.userEmail || "").toLowerCase() === String(userEmail).toLowerCase()
+      String(session.metadata?.userEmail || "").toLowerCase() === tokenEmail
 
     if (!paid || !metadataMatches) {
       return res.status(400).send({ message: "Payment not verified", paid, metadataMatches })
@@ -541,19 +561,16 @@ app.post("/payments/verify", verifyJWT, async (req, res) => {
 app.delete("/appointments/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
-    const { email } = req.query
+    const tokenEmail = String(req.decoded?.email || "").toLowerCase()
     if (!ObjectId.isValid(id)) {
       return res.status(400).send({ message: "Invalid appointment id" })
-    }
-    if (!email) {
-      return res.status(401).send({ message: "Authentication required" })
     }
 
     const appointment = await appointments.findOne({ _id: new ObjectId(id) })
     if (!appointment) {
       return res.status(404).send({ message: "Appointment not found" })
     }
-    if (String(appointment.userEmail).toLowerCase() !== String(email).toLowerCase()) {
+    if (String(appointment.userEmail).toLowerCase() !== tokenEmail) {
       return res.status(403).send({ message: "You can only delete your own appointment" })
     }
     if (appointment.appointmentStatus !== "Cancelled") {
