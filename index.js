@@ -9,7 +9,11 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 const port = process.env.PORT || 5000
-const clientBaseUrl = process.env.CLIENT_BASE_URL || "http://localhost:3000"
+const clientBaseUrl = (
+  process.env.CLIENT_BASE_URL ||
+  process.env.BETTER_AUTH_URL ||
+  "http://localhost:3000"
+).replace(/\/$/, "")
 const jwtSecret = process.env.JWT_SECRET
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null
 const client = new MongoClient(`mongodb+srv://${process.env.MONGODB_USERNAME_URL}:${process.env.MONGODB_PASSWORD_URL}@cluster0.4dwew1j.mongodb.net/`);
