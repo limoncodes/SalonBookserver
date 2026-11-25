@@ -80,7 +80,7 @@ app.post('/Add-Services', verifyJWT, async (req, res) => {
     res.status(500).send({ message: "Failed to add service", error: error.message })
   }
 })
-app.get("/addServices", async (req, res) => {
+app.get("/addServices", verifyJWT, async (req, res) => {
   try {
     const { search, category, sort, status } = req.query
 
@@ -107,7 +107,7 @@ app.get("/addServices", async (req, res) => {
   }
 })
 
-app.get("/addServices/:id", async (req, res) => {
+app.get("/addServices/:id", verifyJWT, async (req, res) => {
   try {
     const { id } = req.params
     if (!ObjectId.isValid(id)) {
